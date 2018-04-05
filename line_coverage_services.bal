@@ -16,23 +16,19 @@
 // under the License.
 //
 
-import ballerina/caching;
 import ballerina/collections;
 import ballerina/config;
 import ballerina/http;
-import ballerina/io;
 import ballerina/log;
 import ballerina/math;
 import ballerina/sql;
 import sonarqube_6_7;
+import ballerina/io;
 
 @Description {value:"Service Endpoint."}
 endpoint http:ServiceEndpoint serviceEndpoint {
     port:9090
 };
-
-//cache to store line coverage values
-caching:Cache cache = caching:createCache("Line_Coverages", 3600000, 10, 0.1);
 
 service<http:Service> LineCoverage bind serviceEndpoint {
 
@@ -46,42 +42,15 @@ service<http:Service> LineCoverage bind serviceEndpoint {
 
     //get product coverage details and send it to dashboard
     getProductsLineCoverage (endpoint conn, http:Request req) {
-        lock {
-            http:Response res = {};
-            try {
-                json cachedData =? <json>cache.get(PRODUCT_LINE_COVERAGES);
-                res.setJsonPayload(cachedData);
+        string productName = req.rawPath.split("=")[1].replace("_"," ");
+        http:Response res = {};
+        match getLineCoverage(productName) {
+            json lineCoverage => {
+                res.setJsonPayload(lineCoverage);
                 _ = conn -> respond(res);
-            } catch (error err) {
-                res.setJsonPayload({});
-                _ = conn -> respond(res);
-                json products = getAllProducts()[PRODUCTS];
-                json[] coverageDetails = [];
-                json[] productList = [];
-                int count = 0;
-                foreach product in products {
-                    productList[count] = product;
-                    match getLineCoverage(product.toString()) {
-                        json lineCoverage => {
-                            coverageDetails[count] = lineCoverage;
-                            count = count + 1;
-                        }
-                        error conError => {
-                            //retry to get the line coverage of the product
-                            match getLineCoverage(product.toString()){
-                                json lineCoverage => {
-                                    coverageDetails[count] = lineCoverage;
-                                    count = count + 1;
-                                }
-                                error conErr =>{
-                                    log:printError("Error getting line coverage for product " + product.toString());
-                                }
-                            }
-                        }
-                    }
-                }
-                json productLineCoverage = {products:productList, coverages:coverageDetails};
-                cache.put(PRODUCT_LINE_COVERAGES, productLineCoverage);
+            }
+            error conError => {
+                log:printError("Error getting line coverage for product " + productName);
             }
         }
     }
@@ -172,7 +141,7 @@ function getLineCoverage (string productName) returns (json|error) {
                         //total uncovered
                         totalUncoveredLines = totalUncoveredLines + uncoveredLines;
                         //line coverage for the component
-                        float lineCoverage = math:round((lines - uncoveredLines)* 10000.0 / lines)/100.0;
+                        float lineCoverage = math:round((lines - uncoveredLines) * 10000.0 / lines) / 100.0;
                         //prepare json containing component name and coverage
                         componentDetails[compCount] = {name:project.name, coverage:lineCoverage};
                         compCount = compCount + 1;
