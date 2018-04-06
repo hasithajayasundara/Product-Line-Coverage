@@ -21,7 +21,6 @@ package sonarqube_6_7;
 import ballerina/http;
 import ballerina/log;
 import ballerina/math;
-import ballerina/io;
 
 @Description {value:"Get project details."}
 @Param {value:"projetName:Name of the project."}
